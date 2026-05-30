@@ -127,22 +127,19 @@ X_pad = X_pad[..., np.newaxis].astype(np.float32)  # (N, D, H, W, 1)
 print("Forma X_pad (con canal):", X_pad.shape)  # (N,D,H,W,1)
 
 "X_pad es nuestos datos de entrada"
-# En PyTorch no usamos tf.keras.Input, sino tensores directamente.
-# El equivalente será un tensor de forma (N, 1, 48,48,48)
-# y definiremos la arquitectura en clases nn.Module.
-# inp = tf.keras.Input(shape=(48,48,48,1))
+
 
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print("Device:", device)
 
-# Creamos el VAE a partir del encoder y decoder que ya definiste
-input_shape = (X_pad.shape[1], X_pad.shape[2], X_pad.shape[3])  # (16,8,8)
+# Creamos el VAE 
+input_shape = (X_pad.shape[1], X_pad.shape[2], X_pad.shape[3]) 
 vae = mod_vae.VAE(LATENT_DIM, input_shape=input_shape).to(device)
 
 # Datos a tensores PyTorch: (N, D,H,W,1) -> (N,1,D,H,W)
-x_dummy_np = X_pad  # (N,48,48,48,1)
-x_tensor = torch.from_numpy(np.transpose(x_dummy_np, (0,4,1,2,3)))  # (N,1,48,48,48)
+x_dummy_np = X_pad  
+x_tensor = torch.from_numpy(np.transpose(x_dummy_np, (0,4,1,2,3)))  
 print("Forma x_tensor (PyTorch):", x_tensor.shape)  # (N,1,D,H,W)
 dataset = TensorDataset(x_tensor)
 g = torch.Generator()
@@ -359,7 +356,7 @@ else:
 
 x_dummy = x_tensor.to(device)  
 N = x_dummy.shape[0]
-batch_size = 8   # o 8, 4... ajusta según tu GPU
+batch_size = 8  
 
 mu_list = []
 logvar_list = []
@@ -389,7 +386,7 @@ labels_num = (labels == "PD").astype(int)
 # UMAP sobre μ (espacio latente del encoder)
 # =========================================
 
-# 1) (Opcional pero recomendado) Estandarizar las características
+# 1) Estandarizar las características
 scaler_mu = StandardScaler()
 mu_all_std = scaler_mu.fit_transform(mu_all)   # sigue siendo (N, LATENT_DIM)
 
@@ -454,7 +451,7 @@ plt.show()
 
 metrics = []
 
-# Métricas en espacio latente (recomendado)
+# Métricas en espacio latente 
 metrics.append(mtk.cluster_metrics(mu_all_std, labels_num, name="mu_std (latent)"))
 metrics.append(mtk.cluster_metrics(z_all_std,  labels_num, name="z_std (latent)"))
 
@@ -512,7 +509,7 @@ pl.plot_cluster_metrics(df_all)
 # ==========================
 
 num_samples = 6
-z_full = X.shape[3] // 2  # ojo: X es (N,48,48,48) -> slice axial
+z_full = X.shape[3] // 2  
 
 torch.manual_seed(SEED)
 if torch.cuda.is_available():
@@ -781,7 +778,7 @@ for i in matrices_pd:
 # =====================================
 
 
-X_2d = z_umap          # o z_umap
+X_2d = z_umap          
 y = labels_num
 idx = 1429
 

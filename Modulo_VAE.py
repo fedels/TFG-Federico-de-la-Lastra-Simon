@@ -75,14 +75,7 @@ class Decoder3D(nn.Module):
         return x  
 
 
-"""
-    EN un VAE tenemos 3 modelos:
-        -> El encoder
-        -> El decoder
-        -> EL modelo grande VAE que los junta y gestiona la perdida
-    En el anterior caso teniamos solo un modelo que unia encoder y decoder
-    
-"""
+
 
 class VAE(nn.Module):
     def __init__(self, latent_dim, beta=1.0, input_shape=(16,8,8)):
@@ -122,14 +115,7 @@ class VAE(nn.Module):
         x_recon = self.decode(z)
         return x_recon, mu, logvar, z
 
-    """
-        Esta función es el equivalente a definir la función de pérdidas
-        dentro de la clase VAE, como hacíamos en train_step de Keras.
-        Calcula:
-            - recon_loss (MSE)
-            - kl_loss (divergencia KL)
-            - total_loss = recon_loss + beta * kl_loss
-    """
+
     def compute_loss(self, x):
         x_recon, mu, logvar, z = self.forward(x)
 
@@ -146,15 +132,7 @@ class VAE(nn.Module):
         total_loss = recon_loss + self.beta * kl_div_loss
         return total_loss, recon_loss, kl_div_loss
 
-    """
-        Esta función es el equivalente más parecido a model.fit(...)
-        en Keras. Integra el bucle de entrenamiento dentro de la clase
-        VAE, usando:
-            - dataloader para iterar sobre los datos
-            - optimizer para actualizar pesos
-            - beta_sched para actualizar beta por época
-            - lógica de "ModelCheckpoint" y "EarlyStopping"
-    """
+
     def fit(self, dataloader, optimizer, beta_sched,
             epochs, pesos_path, patience, dataset_size, device):
 
@@ -180,7 +158,7 @@ class VAE(nn.Module):
 
                 running_loss += total_loss.item() * batch_x.size(0)
 
-                # Mostrar info en la barra (similar al "loss=..., kl_loss=..." de Keras)
+                # Mostrar info en la barra 
                 progress_bar.set_postfix({
                     "loss": f"{total_loss.item():.4f}",
                     "recon": f"{recon_loss.item():.4f}",
@@ -207,27 +185,7 @@ class VAE(nn.Module):
                 break
 
 
-"""
-    Con esta clase vamos a crear una callback para hacer una beta scheduler
-    como ya hemos hecho anteriormente, vamos a heredar la estructura de una 
-    callback y vamos a personalizar algunas de sus funciones.
-    
-    Esto lo haremos porque queremos que el modelo aprenda primero a reconstruir
-    y para ello necesitamos una beta baja para que el KL tenga poca importancia,
-    cuando han pasado algunas epocas queremos que el modelo aprenda a generalizar
-    y organizar el espacio latente, para ello KL debe ir cobrando mas importancia, 
-    para ello debemos ir subiendo el valor de beta
-    
-    -> __init__ importa todos las variables y los guarda como atributos 
-    
-    -> on_epoch_begin es una funcion heredada de Callback que Keras llama 
-    automáticamente al inicio de cada época que permite ir actualizando valores.
-    El procedimiento es el de normalizar por numero de epocas para que el 
-    crecimiento o decrecimiento sea lineal conforme a las epocas, interpolacion
-    lineal
-         Si beta_start < beta_end → beta irá subiendo con las épocas.
-         Si beta_start > beta_end → beta irá bajando con las épocas.
-"""
+
 class BetaScheduler:
     def __init__(self, vae, beta_start, beta_end, n_epochs):
         self.vae = vae

@@ -20,11 +20,7 @@ from sklearn.preprocessing import StandardScaler
 
 from skimage import measure
 
-# ============================================================
-#  IMPORTANTE: en PyTorch el formato de tensores es (N, C, D,H,W)
-#  mientras que en TensorFlow era (N, D,H,W,C). Lo tendremos en
-#  cuenta al convertir los datos a tensores.
-# ============================================================
+
 
 
 #==============================================================================
@@ -201,36 +197,6 @@ def pad_to_multiples(x, multiples=(8,8,8)):
     return x2, crop_slices
 
 
-
-"""
-    Esta capa sera la que le de los valores correspondientes a mu y sigma, 
-    nuestros parametros para reparametrizacion del VAE.
-    
-    La clase Sampling es una capa que hereda de Layer, es decir que hereda las
-    propiedades de tf.keras.layers.Layer
-    Internamente se llama a la funcion call
-    
-    eps genera ruido gaussiano
-    
-    esto hara que z dependa de mu y de sigma y por tanto que sea derivable 
-    respecto a dichas variables y por tanto pueda calcular gradientes y pueda 
-    haber aprendizaje.
-    
-    Cuando hablamos de aprender, hablamos de cambiar el valor de los pesos, el
-    gradiente es una medida que indica si al cambiar un peso la perdia sube o 
-    baja
-    gradiente positivo → debes bajar el peso
-
-    gradiente negativo → debes subir el peso
-
-    gradiente grande → cambio grande
-
-    gradiente pequeño → cambio pequeño
-    
-    Para hacer backpropagation necesitamos que haya gradientes y si alguna 
-    operacion en la red no es derivable los gradientes se cortan y no hay aprendizaje
-    
-"""
 class Sampling(nn.Module):
     def __init__(self):
         super().__init__()
@@ -239,22 +205,18 @@ class Sampling(nn.Module):
         return mu + torch.exp(0.5 * logvar) * eps
 
 
-"""
-    EN PyTorch vamos a implementar explícitamente las redes como
-    clases nn.Module: un encoder 3D, un decoder 3D y el VAE que los
-    combina, manteniendo la misma lógica que en la versión Keras.
-"""
+
 
 class Encoder3D(nn.Module):
     def __init__(self):
         super().__init__()
-        # Entradas en PyTorch: (N, 1, 48,48,48)
+        
         self.conv1 = nn.Conv3d(2, 16, kernel_size=3, padding=1)
-        self.pool1 = nn.MaxPool3d(2)  # 48 -> 24
+        self.pool1 = nn.MaxPool3d(2)  
         self.conv2 = nn.Conv3d(16, 32, kernel_size=3, padding=1)
-        self.pool2 = nn.MaxPool3d(2)  # 24 -> 12
+        self.pool2 = nn.MaxPool3d(2)  
         self.conv3 = nn.Conv3d(32, 64, kernel_size=3, padding=1)
-        self.pool3 = nn.MaxPool3d(2)  # 12 -> 6
+        self.pool3 = nn.MaxPool3d(2)  
 
     def forward(self, x):
         x = F.relu(self.conv1(x))
@@ -263,57 +225,28 @@ class Encoder3D(nn.Module):
         x = self.pool2(x)
         x = F.relu(self.conv3(x))
         x = self.pool3(x)
-        return x  # (N, 64, 6,6,6)
+        return x 
 
 
 class Decoder3D(nn.Module):
-    """
-        AHORA HAY UN CAMBIO SUSTANCIAL EN LA FUNCION DEL DECODER
-        
-        ANTES
-        Entra un tensor y devolvia un tensor
-        
-        AHORA
-        Entra un tensor y devueve un modelo
-    """
+
     def __init__(self, latent_dim, feat_shape):
-        """
-            Antes de pasar con la explicacion de la reconstruccion de la forma cubica
-            vamos a explicar lo que recibe como input el decoder
-            
-            El VAE recibe un vector latente, por tanto con dec_inp le estamos diciendo
-            que cuando se llame a la funcion  crearemos el modelo decoder y su 
-            entrada será un vector de tamaño latent_dim, que es el tamaño del espacio latente.
-            
-            Pretendemos recuperar la forma cubica:
-            -> Con tf.math.reduce_prod obtenemos el valor de 8*8*8*64 que sera el
-            numero de neuronas de la Dense de proyeccion
-            
-            Con la funcion Dense tomamos el vector latente (procedente del cuello de
-            botella) y lo mapea en un vector del valor de units = 8*8*8*64
-            
-            Con Reshape pasamos de un vector 1D a un cubo 3D con las dimensiones 
-            especificadas en feat_shape
-            
-        """
+
         super().__init__()
         self.latent_dim = latent_dim
         self.feat_shape = feat_shape  # (C, D, H, W)
-        units = int(np.prod(feat_shape))  # 64*6*6*6
+        units = int(np.prod(feat_shape))  
         self.proj = nn.Linear(latent_dim + 1, units)
-        # reshape a (N, 64, 6,6,6) en forward
+       
 
-        """
-            Proceso de deconvolucion ya explicado en training 1
-        """
-        # ConvTranspose3d para duplicar tamaño: usamos stride=2 y output_padding=1
+
         self.dec_up1 = nn.ConvTranspose3d(64, 32, kernel_size=3, stride=2,
-                                          padding=1, output_padding=1)  # 6 → 12
+                                          padding=1, output_padding=1) 
         self.dec_up2 = nn.ConvTranspose3d(32, 16, kernel_size=3, stride=2,
-                                          padding=1, output_padding=1)  # 12 → 24
+                                          padding=1, output_padding=1) 
         self.dec_up3 = nn.ConvTranspose3d(16, 8,  kernel_size=3, stride=2,
-                                          padding=1, output_padding=1)  # 24 → 48
-        self.output = nn.Conv3d(8, 1, kernel_size=1, padding=0)         # (48,48,48)
+                                          padding=1, output_padding=1)  
+        self.output = nn.Conv3d(8, 1, kernel_size=1, padding=0)        
 
     def forward(self, z, y):
         # y: (N,) int64 -> (N,1) float
@@ -330,39 +263,20 @@ class Decoder3D(nn.Module):
         return x
 
 
-"""
-    EN un VAE tenemos 3 modelos:
-        -> El encoder
-        -> El decoder
-        -> EL modelo grande VAE que los junta y gestiona la perdida
-    En el anterior caso teniamos solo un modelo que unia encoder y decoder
-    
-"""
+
 
 class VAE(nn.Module):
     def __init__(self, latent_dim, beta = 1.0):
         super().__init__()
         self.beta = float(beta)
         self.encoder_net = Encoder3D()
-        # Inicialmente no conocemos feat_shape hasta pasar un dummy
         dummy = torch.zeros(1, 2, 16, 8, 8)
         with torch.no_grad():
             feats = self.encoder_net(dummy)
-        self.feat_shape = feats.shape[1:]           # (64,6,6,6)
-        flat_dim = int(np.prod(self.feat_shape))    # Flatten convierte el cubo en un vector de tamaño 64*6*6*6
+        self.feat_shape = feats.shape[1:]           
+        flat_dim = int(np.prod(self.feat_shape))    
 
-        """
-            Con Dense comprimimos la informacion:
-                - Pasamos de 64*6*6*6 valores a solo LATENT_DIM
-                
-            Esto lo conseguimos multiplicando nuestro vector flatten por una matriz
-            de dimension (tamaño de flaten x LATENT_DIM) y sumandole un sesgo igual a
-            LATENT_DIM.
-            
-            Creamos los vectores mu y logvar sin activacion para que sean lineales
-            
-            Como resultado devolvemos mu, logvar y z
-        """
+
         self.fc_mu = nn.Linear(flat_dim, latent_dim)
         self.fc_logvar = nn.Linear(flat_dim, latent_dim)
         self.sampling = Sampling()
@@ -370,7 +284,7 @@ class VAE(nn.Module):
         self.num_classes = 2  # Control vs PD
         self.classifier = nn.Linear(latent_dim, self.num_classes)
 
-        # Peso del término de clasificación (ajústalo luego)
+        # Peso del término de clasificación 
         self.lambda_cls = 0.5
 
     def encode(self, x, y):
@@ -396,14 +310,7 @@ class VAE(nn.Module):
         x_recon = self.decode(z, y)
         return x_recon, mu, logvar, z
 
-    """
-        Esta función es el equivalente a definir la función de pérdidas
-        dentro de la clase VAE, como hacíamos en train_step de Keras.
-        Calcula:
-            - recon_loss (MSE)
-            - kl_loss (divergencia KL)
-            - total_loss = recon_loss + beta * kl_loss
-    """
+
     def compute_loss(self, x, y):
         x_recon, mu, logvar, z = self.forward(x, y)
 
@@ -424,15 +331,7 @@ class VAE(nn.Module):
         total_loss = recon_loss + self.beta * kl_div_loss + self.lambda_cls * cls_loss
         return total_loss, recon_loss, kl_div_loss, cls_loss
 
-    """
-        Esta función es el equivalente más parecido a model.fit(...)
-        en Keras. Integra el bucle de entrenamiento dentro de la clase
-        VAE, usando:
-            - dataloader para iterar sobre los datos
-            - optimizer para actualizar pesos
-            - beta_sched para actualizar beta por época
-            - lógica de "ModelCheckpoint" y "EarlyStopping"
-    """
+
     def fit(self, dataloader, optimizer, beta_sched,
             epochs, pesos_path, patience, dataset_size, device):
 
@@ -459,7 +358,7 @@ class VAE(nn.Module):
 
                 running_loss += total_loss.item() * batch_x.size(0)
 
-                # Mostrar info en la barra (similar al "loss=..., kl_loss=..." de Keras)
+                # Mostrar info en la barra
                 progress_bar.set_postfix({
                     "loss": f"{total_loss.item():.4f}",
                     "recon": f"{recon_loss.item():.4f}",
@@ -489,27 +388,7 @@ class VAE(nn.Module):
                 break
 
 
-"""
-    Con esta clase vamos a crear una callback para hacer una beta scheduler
-    como ya hemos hecho anteriormente, vamos a heredar la estructura de una 
-    callback y vamos a personalizar algunas de sus funciones.
-    
-    Esto lo haremos porque queremos que el modelo aprenda primero a reconstruir
-    y para ello necesitamos una beta baja para que el KL tenga poca importancia,
-    cuando han pasado algunas epocas queremos que el modelo aprenda a generalizar
-    y organizar el espacio latente, para ello KL debe ir cobrando mas importancia, 
-    para ello debemos ir subiendo el valor de beta
-    
-    -> __init__ importa todos las variables y los guarda como atributos 
-    
-    -> on_epoch_begin es una funcion heredada de Callback que Keras llama 
-    automáticamente al inicio de cada época que permite ir actualizando valores.
-    El procedimiento es el de normalizar por numero de epocas para que el 
-    crecimiento o decrecimiento sea lineal conforme a las epocas, interpolacion
-    lineal
-         Si beta_start < beta_end → beta irá subiendo con las épocas.
-         Si beta_start > beta_end → beta irá bajando con las épocas.
-"""
+
 class BetaScheduler:
     def __init__(self, vae, beta_start, beta_end, n_epochs):
         self.vae = vae
@@ -542,23 +421,16 @@ X_pad, crop = pad_to_multiples(x_norm)
 #En esta linea le añadimos el canal
 X_pad = X_pad[..., np.newaxis].astype(np.float32)  # (N, D, H, W, 1)
 
-"X_pad es nuestos datos de entrada"
-# En PyTorch no usamos tf.keras.Input, sino tensores directamente.
-# El equivalente será un tensor de forma (N, 1, 48,48,48)
-# y definiremos la arquitectura en clases nn.Module.
-# inp = tf.keras.Input(shape=(48,48,48,1))
-
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print("Device:", device)
 
-# Creamos el VAE a partir del encoder y decoder que ya definiste
+# Creamos el VAE 
 vae = VAE(LATENT_DIM).to(device)
 
 # Datos a tensores PyTorch: (N, D,H,W,1) -> (N,1,D,H,W)
-x_dummy_np = X_pad  # (N,48,48,48,1)
-x_tensor = torch.from_numpy(np.transpose(x_dummy_np, (0,4,1,2,3)))  # (N,1,48,48,48)
-
+x_dummy_np = X_pad  
+x_tensor = torch.from_numpy(np.transpose(x_dummy_np, (0,4,1,2,3)))  
 # ---- AÑADIR: labels -> y_tensor ----
 # PD=1, Control=0 (si tus labels son exactamente "PD" y "Control")
 y_np = (labels == "PD").astype(np.int64)   # PD=1, resto=0
@@ -607,10 +479,10 @@ with torch.no_grad():
     y_ctrl = y_tensor[idx_ctrl:idx_ctrl+1].to(device)
 
     x_recon_c, mu_c, logvar_c, z_c = vae(x_ctrl, y_ctrl)
-    y_dummy_c = x_recon_c.cpu().numpy()                 # (1,1,48,48,48)
-    y_dummy_c = np.transpose(y_dummy_c, (0,2,3,4,1))    # (1,48,48,48,1) para indexar igual que antes
+    y_dummy_c = x_recon_c.cpu().numpy()                 
+    y_dummy_c = np.transpose(y_dummy_c, (0,2,3,4,1))    
 
-z_slice = x_dummy_np.shape[2] // 2  # eje D (axial)
+z_slice = x_dummy_np.shape[2] // 2  
 
 plt.figure("Figura Control")
 plt.subplot(1,2,1); plt.imshow(x_dummy_np[0,:,:,z_slice,0], cmap="viridis"); plt.title("Original"); plt.axis("off")
@@ -688,7 +560,7 @@ labels_num = (labels == "PD").astype(int)
 # UMAP sobre μ (espacio latente del encoder)
 # =========================================
 
-# 1) (Opcional pero recomendado) Estandarizar las características
+# 1) Estandarizar las características
 scaler_mu = StandardScaler()
 mu_all_std = scaler_mu.fit_transform(mu_all)   # sigue siendo (N, LATENT_DIM)
 
@@ -752,7 +624,7 @@ plt.show()
 # GENERACIÓN: sampling en Z
 # ==========================
 
-num_samples = 6   # cuántas imágenes quieres generar
+num_samples = 6   # imágenes a generar
 z_slice = X_pad.shape[2] // 2  # mismo corte axial que antes
 
 with torch.no_grad():
@@ -787,7 +659,7 @@ plt.show()
 #parecidas. Si observamos cosas identicas es porque el VAE esta colapsado y si 
 #observamos cosa muy distintas es porque el vae no ha aprendido lo suficiente
 
-num_variants = 5   # cuántas variaciones por paciente
+num_variants = 5   # variaciones muestra
 
 with torch.no_grad():
     # ----- CONTROL -----
@@ -865,21 +737,21 @@ plt.show()
 # Comprobaciones de colapso VAE
 # ================================
 
-# 2.1. Varianza de z por dimensión
+# Varianza de z por dimensión
 z_var_per_dim = z_all.var(axis=0)
 print("Varianza por dimensión latente:\n", z_var_per_dim)
 print("Varianza media:", z_var_per_dim.mean())
 
-# Si muchas dimensiones tienen varianza ~0 → no se usan realmente
+# Si muchas dimensiones tienen varianza cercana a 0 → no se usan realmente
 
-# 2.2. Distancias entre z de diferentes muestras
+# Distancias entre z de diferentes muestras
 from scipy.spatial.distance import pdist, squareform
 
 dist_matrix = squareform(pdist(z_all))  # matriz de distancias Euclídeas
 print("Distancia media entre pares de z:", dist_matrix.mean())
 print("Distancia mínima entre pares de z:", dist_matrix[dist_matrix>0].min())
 
-# 2.3. Generación desde varios z reales y comparar salidas
+# Generación desde varios z reales y comparar salidas
 num_check = 5    # cuántas muestras comprobar
 idxs = np.linspace(0, len(x_tensor)-1, num_check, dtype=int)
 

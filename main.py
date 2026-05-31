@@ -872,11 +872,23 @@ for train_idx, test_idx in skf.split(X_features, y):
     tpr_interp[0] = 0.0
     tprs.append(tpr_interp)
 
+bal_acc_mean = np.mean(balanced_accs)
+bal_acc_std  = np.std(balanced_accs, ddof=1)
+
+sens_mean = np.mean(sensitivities)
+sens_std  = np.std(sensitivities, ddof=1)
+
+spec_mean = np.mean(specificities)
+spec_std  = np.std(specificities, ddof=1)
+
+auc_mean = np.mean(aucs)
+auc_std  = np.std(aucs, ddof=1)
+
 print("===== SVM LINEAR (5-Fold CV) =====")
-print("Balanced Accuracy:", np.mean(balanced_accs))
-print("Sensitivity (PD):", np.mean(sensitivities))
-print("Specificity (Control):", np.mean(specificities))
-print("AUC:", np.mean(aucs))
+print(f"Balanced Accuracy:      {bal_acc_mean:.4f} ± {bal_acc_std:.4f}")
+print(f"Sensitivity (PD):       {sens_mean:.4f} ± {sens_std:.4f}")
+print(f"Specificity (Control):  {spec_mean:.4f} ± {spec_std:.4f}")
+print(f"AUC:                    {auc_mean:.4f} ± {auc_std:.4f}")
 
 mean_tpr = np.mean(tprs, axis=0)
 mean_tpr[-1] = 1.0
